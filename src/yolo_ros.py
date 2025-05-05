@@ -11,7 +11,6 @@ from vision_msgs.msg import BoundingBox2D, BoundingBox2DArray
 from std_msgs.msg import Float32
 import openvino as ov
 
-
 class YOLOv11DetectorGPU:
     def __init__(self):
         rospy.init_node('yolo11_detector_gpu', anonymous=True)
@@ -20,7 +19,7 @@ class YOLOv11DetectorGPU:
         self.load_camera_params()
 
         # 参数配置
-        model_path = rospy.get_param('~model_path', '/root/model/basket11n_openvino_model/basket11n')
+        model_path = rospy.get_param('~model_path', '/root/model/basket11s_openvino_model/basket11s')
         self.conf_thres = rospy.get_param('~conf_threshold', 0.5)
         self.iou_thres = rospy.get_param('~iou_threshold', 0.45)
         self.img_topic = rospy.get_param('~image_topic', '/usb_cam/image/compressed')
@@ -188,8 +187,7 @@ class YOLOv11DetectorGPU:
         return ov.Tensor(input_data)
 
     def postprocess(self, output, orig_w, orig_h):
-        """后处理：解析输出并应用NMS"""
-        # 假设输出格式为(84, 8400)，其中前4个为坐标，后80为类别概率
+        """后处理：仅保留置信度过滤"""
         boxes = []
         scores = []
         class_ids = []
@@ -201,7 +199,7 @@ class YOLOv11DetectorGPU:
             confidence = scores_all[class_id]
 
             if confidence < self.conf_thres:
-                continue
+                continue  # 跳过低置信度检测
 
             # 转换坐标为原始图像尺寸
             cx = detection[0] * orig_w / self.img_size[0]
@@ -219,18 +217,14 @@ class YOLOv11DetectorGPU:
             scores.append(float(confidence))
             class_ids.append(class_id)
 
-        # 应用NMS
-        indices = cv2.dnn.NMSBoxes(boxes, scores, self.conf_thres, self.iou_thres)
-
+        # 直接保留所有满足阈值的检测框，不使用NMS
         candidates = []
-        for i in indices:
-            idx = i[0] if isinstance(i, (list, np.ndarray)) else i
-            x1, y1, x2, y2 = boxes[idx]
+        for idx in range(len(boxes)):
             candidates.append({
-                "x1": x1,
-                "y1": y1,
-                "x2": x2,
-                "y2": y2,
+                "x1": boxes[idx][0],
+                "y1": boxes[idx][1],
+                "x2": boxes[idx][2],
+                "y2": boxes[idx][3],
                 "conf": scores[idx],
                 "cls_id": class_ids[idx],
                 "label": self.class_names[class_ids[idx]]
